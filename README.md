@@ -52,5 +52,7 @@ by deployments on the cluster.
 
    In the shell it creates run:
 
-   curl $NGINX_SERVICE_HOST
+   ```bash
+   curl "http://$NGINX_SERVICE_HOST"
+   ```
 
