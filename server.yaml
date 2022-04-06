@@ -1,0 +1,86 @@
+# Copyright (c) 2021 Tailscale Inc & AUTHORS All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tailscale-auth
+stringData:
+  AUTH_KEY: {{AUTH_KEY}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{SA_NAME}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tailscale
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["secrets"]
+  # Create can not be restricted to a resource name.
+  verbs: ["create"]
+- apiGroups: [""] # "" indicates the core API group
+  resourceNames: ["{{KUBE_SECRET}}"]
+  resources: ["secrets"]
+  verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tailscale
+subjects:
+- kind: ServiceAccount
+  name: "{{SA_NAME}}"
+roleRef:
+  kind: Role
+  name: tailscale
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: server-gw
+spec:
+  serviceAccountName: "{{SA_NAME}}"
+  initContainers:
+    # In order to run as a proxy we need to enable IP Forwarding inside
+    # the container. The `net.ipv4.ip_forward` sysctl is not whitelisted
+    # in Kubelet by default.
+  - name: sysctler
+    image: busybox
+    securityContext:
+      privileged: true
+    command: ["/bin/sh"]
+    args:
+      - -c
+      - sysctl -w net.ipv4.ip_forward=1
+    resources:
+      requests:
+        cpu: 1m
+        memory: 1Mi
+  containers:
+  - name: tailscale
+    imagePullPolicy: Always
+    image: "{{IMAGE_TAG}}"
+    env:
+    # Store the state in a k8s secret
+    - name: KUBE_SECRET
+      value: "{{KUBE_SECRET}}"
+    - name: USERSPACE
+      value: "false"
+    - name: AUTH_KEY
+      valueFrom:
+        secretKeyRef:
+          name: tailscale-auth
+          key: AUTH_KEY
+          optional: true
+    - name: SERVICE
+      value: "{{SERVICE}}"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
